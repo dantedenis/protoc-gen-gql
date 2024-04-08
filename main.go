@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -48,7 +47,7 @@ func main() {
 
 func generate(req *pluginpb.CodeGeneratorRequest) (outFiles []*pluginpb.CodeGeneratorResponse_File, err error) {
 	var genServiceDesc bool
-	var merge bool
+	var mergePath *string
 	var extension = generator.DefaultExtension
 	for _, param := range strings.Split(req.GetParameter(), ",") {
 		var value string
@@ -61,9 +60,8 @@ func generate(req *pluginpb.CodeGeneratorRequest) (outFiles []*pluginpb.CodeGene
 				return nil, err
 			}
 		case "merge":
-			if merge, err = strconv.ParseBool(value); err != nil {
-				return nil, err
-			}
+			v := value
+			mergePath = &v
 		case "ext":
 			extension = strings.Trim(value, ".")
 		}
@@ -77,6 +75,7 @@ func generate(req *pluginpb.CodeGeneratorRequest) (outFiles []*pluginpb.CodeGene
 		return nil, err
 	}
 
+	merge := mergePath != nil
 	gqlDesc, err := generator.NewSchemas(descs, merge, genServiceDesc, p)
 	if err != nil {
 		return nil, err
@@ -87,7 +86,7 @@ func generate(req *pluginpb.CodeGeneratorRequest) (outFiles []*pluginpb.CodeGene
 		protoFileName := schema.FileDescriptors[0].GetName()
 
 		outFiles = append(outFiles, &pluginpb.CodeGeneratorResponse_File{
-			Name:    proto.String(resolveGraphqlFilename(protoFileName, merge, extension)),
+			Name:    proto.String(resolveGraphqlFilename(protoFileName, mergePath, extension)),
 			Content: proto.String(buff.String()),
 		})
 	}
@@ -95,18 +94,10 @@ func generate(req *pluginpb.CodeGeneratorRequest) (outFiles []*pluginpb.CodeGene
 	return
 }
 
-func resolveGraphqlFilename(protoFileName string, merge bool, extension string) string {
-	if merge {
+func resolveGraphqlFilename(protoFileName string, merge *string, extension string) string {
+	if merge != nil {
 		gqlFileName := "schema." + extension
-		absProtoFileName, err := filepath.Abs(protoFileName)
-		if err == nil {
-			protoDirSlice := strings.Split(filepath.Dir(absProtoFileName), string(filepath.Separator))
-			if len(protoDirSlice) > 0 {
-				gqlFileName = protoDirSlice[len(protoDirSlice)-1] + "." + extension
-			}
-		}
-		protoDir, _ := path.Split(protoFileName)
-		return path.Join(protoDir, gqlFileName)
+		return path.Join(*merge, gqlFileName)
 	}
 
 	return strings.TrimSuffix(protoFileName, path.Ext(protoFileName)) + "." + extension
